@@ -202,7 +202,7 @@ ExecuteResult execute_select(Statement *statement, Table *table){
             print_row(&row);
         }
     }else{
-        printf("db is empty");
+        printf("db is empty\n");
     }
     return EXECUTE_SUCCESS;
 }
@@ -226,6 +226,8 @@ int main(int argc, char *argv[]){
     while (true) {
         print_prompt();
         read_input(input_buffer);
+
+        if (strcmp(input_buffer->buffer, "") == 0) continue;
 
         if(input_buffer->buffer[0] == '.'){
             switch (do_meta_command(input_buffer, table)) {
