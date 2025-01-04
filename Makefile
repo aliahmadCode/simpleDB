@@ -1,14 +1,14 @@
-
-
 COMPILER = gcc
 FLAGS = -Wall -std=c17
 EX = main
 
-all:
+
+all: compile
+	./test.sh
+
+compile:
 	$(COMPILER) $(FLAGS) main.c -o main
-	./$(EX)
 
 clean:
 	rm -rf main
-
 
