@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200809L // tells the compiler to enable the POXIS_C features
+#define _POSIX_C_SOURCE 200809L // tells the compiler to enable the POSIX_C features
 // should be defined before the <stdio.h>
 
 #include <stdint.h>
