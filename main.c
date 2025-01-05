@@ -21,7 +21,7 @@ typedef enum {
     META_COMMAND_UNRECOGNIZED_COMMAND,
 } MetaCommandResult;
 typedef enum {EXECUTE_SUCCESS, EXECUTE_TABLE_FULL} ExecuteResult;
-typedef enum {PREPARE_SUCCESS, PREPARE_UNRECOGNUIZED_STATE, PREPARE_SYNTAX_ERROR} PrepareResult;
+typedef enum {PREPARE_SUCCESS,PREPARE_STRING_TOO_LONG,PREPARE_NEGATIVE_ID, PREPARE_UNRECOGNUIZED_STATE, PREPARE_SYNTAX_ERROR} PrepareResult;
 
 // thetokens
 typedef enum {
@@ -139,16 +139,44 @@ MetaCommandResult do_meta_command(Input_Buffer *input_buffer, Table *table){
         return META_COMMAND_UNRECOGNIZED_COMMAND;
     }
 }
+// func to prepare for insert and validate the input
+PrepareResult prepare_insert(Input_Buffer * input_buffer, Statement *statement){
+    statement->type = STATEMENT_INSERT;
+    char *keyword = strtok(input_buffer->buffer, " ");
+    printf("\n\n%s\n\n", keyword);
+    char *id_str = strtok(NULL, " ");
+    char *username_str = strtok(NULL, " ");
+    char *email_str = strtok(NULL, " ");
+
+    if(id_str == NULL || username_str == NULL || email_str == NULL){
+        return PREPARE_SYNTAX_ERROR;
+    }
+
+    int id = atoi(id_str);
+    if(id < 0){
+        return PREPARE_NEGATIVE_ID;
+    }
+
+    if(strlen(username_str) > COL_USERNAME_SIZE){
+        return PREPARE_STRING_TOO_LONG;
+    }
+
+    if(strlen(email_str) > COL_EMAIL_SIZE){
+        return PREPARE_STRING_TOO_LONG;
+    }
+
+    statement->row_to_insert.id = id;
+    strcpy(statement->row_to_insert.username, username_str);
+    strcpy(statement->row_to_insert.email, email_str);
+
+    return PREPARE_SUCCESS;
+}
+
 
 PrepareResult prepare_statement(Input_Buffer *input_buffer, Statement *statement){
-    if(strncmp(input_buffer->buffer, "insert", 6) == 0){
-        statement->type = STATEMENT_INSERT;
-        int args_assigned = sscanf(input_buffer->buffer, "insert %d %s %s", &(statement->row_to_insert.id), statement->row_to_insert.username, statement->row_to_insert.email);
 
-        if (args_assigned < 3){
-            return PREPARE_SYNTAX_ERROR;
-        }
-        return PREPARE_SUCCESS;
+    if(strncmp(input_buffer->buffer, "insert", 6) == 0){
+        return prepare_insert(input_buffer, statement);
     }
     if(strncmp(input_buffer->buffer, "select", 6) == 0){
         statement->type = STATEMENT_SELECT;
@@ -215,7 +243,6 @@ ExecuteResult execute_statement(Statement *statement, Table *table){
         case (STATEMENT_SELECT):
             return execute_select(statement, table);
     }
-    // ingnore this warning for right-now
 }
 
 
@@ -244,8 +271,14 @@ int main(int argc, char *argv[]){
         switch (prepare_statement(input_buffer, &statement)) {
             case (PREPARE_SUCCESS):
                 break;
+            case (PREPARE_STRING_TOO_LONG):
+                printf("String is too long\n");
+                continue;
             case (PREPARE_SYNTAX_ERROR):
                 printf("Syntax Error. Could'nt parse the statement\n");
+                continue;
+            case (PREPARE_NEGATIVE_ID):
+                printf("ID can't be less than 0\n");
                 continue;
             case (PREPARE_UNRECOGNUIZED_STATE):
                 printf("Unrecognized keyword at the start of '%s'\n", input_buffer->buffer);
