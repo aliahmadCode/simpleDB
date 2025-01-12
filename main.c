@@ -157,15 +157,6 @@ void read_input(Input_Buffer * input_buffer){
     input_buffer->buffer[bytes_read - 1] = '\0';
 }
 
-MetaCommandResult do_meta_command(Input_Buffer *input_buffer, Table *table){
-    if(strcmp(input_buffer->buffer, ".exit") == 0){
-        close_input_buffer(input_buffer);
-        free_table(table);
-        exit(EXIT_SUCCESS);
-    }else {
-        return META_COMMAND_UNRECOGNIZED_COMMAND;
-    }
-}
 // func to prepare for insert and validate the input
 PrepareResult prepare_insert(Input_Buffer * input_buffer, Statement *statement){
     statement->type = STATEMENT_INSERT;
@@ -261,6 +252,65 @@ void *row_slot(Table *table, uint32_t row_num){
     return page + byte_offset;
 }
 
+void pager_flush(Pager *pager, uint32_t page_num, uint32_t size){
+    if(pager->pages[page_num] == NULL){
+        printf("Tried to flush page\n");
+        exit(EXIT_FAILURE);
+    }
+
+    off_t offset = lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
+    if (offset == -1){
+        printf("Error seeking: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+    ssize_t bytes_written = write(pager->file_descriptor, pager->pages[page_num], size);
+    if(bytes_written == -1){
+        printf("Error writing: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// C using the file_descriptors!
+// put the dust in file and
+// throught everything else
+void db_close(Table*table){
+
+    Pager *pager = table->pager;
+    uint32_t num_full_page = table->num_rows / ROWS_PER_PAGE;
+    for(uint32_t i = 0; i < num_full_page; i++){
+        if(pager->pages[i] == NULL){
+            continue;
+        }
+        pager_flush(pager, i, PAGE_SIZE);
+        free(pager->pages[i]);
+        pager->pages[i] = NULL;
+    }
+
+    uint32_t num_additional_rows = table->num_rows % ROW_SIZE;
+    if(num_additional_rows > 0){
+        uint32_t page_num = num_full_page;
+        if(pager->pages[page_num] == NULL){
+            pager_flush(pager, page_num, num_additional_rows * ROW_SIZE);
+            free(pager->pages[page_num]);
+            pager->pages[page_num] = NULL;
+        }
+    }
+    int result = close(pager->file_descriptor);
+    if(result == -1){
+        show_error("close error");
+    }
+    for(uint32_t i = 0; i < TABLE_MAX_PAGES; i++){
+        void *page = pager->pages[i];
+        if(page){
+            free(page);
+            pager->pages[i] = NULL;
+        }
+    }
+    free(pager);
+    free(table);
+}
+
+
 ExecuteResult execute_insert(Statement *statement, Table *table){
     if(table->num_rows >= TABLE_MAX_ROWS){
         return EXECUTE_TABLE_FULL;
@@ -284,6 +334,16 @@ ExecuteResult execute_select(Statement *statement, Table *table){
     return EXECUTE_SUCCESS;
 }
 
+MetaCommandResult do_meta_command(Input_Buffer *input_buffer, Table *table){
+    if(strcmp(input_buffer->buffer, ".exit") == 0){
+        close_input_buffer(input_buffer);
+        db_close(table);
+        exit(EXIT_SUCCESS);
+    }else {
+        return META_COMMAND_UNRECOGNIZED_COMMAND;
+    }
+}
+
 ExecuteResult execute_statement(Statement *statement, Table *table){
 
     switch (statement->type){
@@ -298,7 +358,12 @@ ExecuteResult execute_statement(Statement *statement, Table *table){
 // home
 int main(int argc, char *argv[]){
     Input_Buffer* input_buffer = get_input_buffer();
-    Table *table = new_table();
+    if(argc < 2){
+        show_error("also provide you given file");
+    }
+
+    const char *filename = argv[1];
+    Table*table = db_open(filename);
 
     while (true) {
         print_prompt();
