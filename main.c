@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 
 
 #define COL_USERNAME_SIZE 32
@@ -228,26 +229,35 @@ void *get_page(Pager*pager, uint32_t page_num){
         printf("Tried to access the page %d > %d\n", page_num, TABLE_MAX_PAGES);
         exit(EXIT_FAILURE);
     }
+
     if(pager->pages[page_num] == NULL){
         // cache miss. allocate and load from file
         void *page = malloc(PAGE_SIZE);
         uint32_t num_pages = pager->file_length / PAGE_SIZE;
-        if(num_pages % PAGE_SIZE){
+
+        // we might have a partial page at the end of the file
+        if(pager->file_length % PAGE_SIZE){
             num_pages += 1;
         }
 
-
-
+        if (page_num <= num_pages){
+            lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
+            ssize_t bytes_read = read(pager->file_descriptor, page, PAGE_SIZE);
+            if(bytes_read == -1){
+                printf("error reading file: %d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+        }
         pager->pages[page_num] = page;
     }
     return pager->pages[page_num];
 }
 
 void *row_slot(Table *table, uint32_t row_num){
-    uint32_t page_num = row_num / ROWS_PER_PAGE;
+    uint32_t page_num = row_num / ROWS_PER_PAGE; // giving the current working page out of TABLE_MAX_PAGES
     void *page = get_page(table->pager, page_num);
-    uint32_t row_offset = row_num % ROWS_PER_PAGE;
-    uint32_t byte_offset = row_offset * ROW_SIZE;
+    uint32_t row_offset = row_num % ROWS_PER_PAGE; // it gives us the current row
+    uint32_t byte_offset = row_offset * ROW_SIZE; // it gives us the starting point of our bytes
     return page + byte_offset;
 }
 
